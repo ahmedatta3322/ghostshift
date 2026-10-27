@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GhostShift</title>
+<style>
+  :root { --bg:#0b0f17; --panel:#121a28; --line:#243049; --fg:#e6ecf5; --muted:#8a97ad;
+          --accent:#4fd1c5; --known:#4ade80; --unknown:#f87171; --missed:#facc15; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, Segoe UI, Roboto, sans-serif; height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; gap:16px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  header h1 span { color:var(--accent); }
+  select, button { background:#1a2436; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; cursor:pointer; }
+  button.active { background:var(--accent); color:#06201d; border-color:var(--accent); font-weight:600; }
+  .group { display:flex; gap:6px; align-items:center; }
+  .hint { color:var(--muted); font-size:12px; }
+  main { flex:1; display:flex; min-height:0; }
+  #stage { flex:1; position:relative; background:#000; cursor:grab; overflow:hidden; }
+  #stage.dragging { cursor:grabbing; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #readout { position:absolute; left:10px; bottom:10px; background:rgba(11,15,23,.8); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-family:ui-monospace, Consolas, monospace; font-size:12px; pointer-events:none; }
+  #label { position:absolute; left:10px; top:10px; background:rgba(11,15,23,.8); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:13px; pointer-events:none; }
+  #timebar { position:absolute; left:10px; right:10px; bottom:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+             background:rgba(11,15,23,.9); border:1px solid var(--line); border-radius:8px; padding:8px 12px; z-index:2; }
+  #timebar input { flex:1 1 120px; min-width:80px; }
+  #timebar span { font-family:ui-monospace, Consolas, monospace; font-size:12px; white-space:nowrap; }
+  #timebar button { white-space:nowrap; }
+  #stage.track #readout { bottom:64px; }
+  aside { width:340px; border-left:1px solid var(--line); background:var(--panel); padding:14px; overflow:auto; }
+  aside h2 { font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:14px 0 6px; }
+  aside h2:first-child { margin-top:0; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:8px; cursor:pointer; }
+  .card:hover, .card.sel { border-color:var(--accent); }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px; font-weight:600; }
+  .tag.known { background:var(--known); color:#052e16; } .tag.unknown { background:var(--unknown); color:#450a0a; } .tag.missed { background:var(--missed); color:#422006; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px; margin-top:6px; }
+  .kv div:nth-child(odd) { color:var(--muted); }
+  a { color:var(--accent); }
+  p.explain { color:var(--muted); font-size:12.5px; margin:4px 0 0; }
+  kbd { background:#1a2436; border:1px solid var(--line); border-radius:4px; padding:0 5px; font-family:inherit; font-size:11px; }
+  @media (max-width: 900px) {
+    body { height:auto; min-height:100vh; }
+    main { flex-direction:column; }
+    #stage { flex:none; height:62vh; min-height:320px; }
+    aside { width:auto; border-left:none; border-top:1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ghost<span>Shift</span></h1>
+  <div class="group"><label class="hint" for="field">Field</label><select id="field"></select></div>
+  <div class="group" id="layers">
+    <button data-layer="epoch1">Epoch 1</button>
+    <button data-layer="epoch2">Epoch 2</button>
+    <button data-layer="diff">Difference</button>
+    <button id="blink">Auto-blink</button>
+    <button data-layer="track" id="trackbtn" style="display:none">Motion track</button>
+  </div>
+  <div class="group">
+    <button id="markers" class="active">Markers</button>
+    <button id="reset">Reset view</button>
+  </div>
+  <span class="hint"><kbd>Space</kbd> flip epochs &nbsp; <kbd>B</kbd> auto-blink &nbsp; <kbd>D</kbd> difference &nbsp; wheel = zoom, drag = pan, click a marker for details</span>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="label"></div>
+    <div id="readout">move the mouse over the sky</div>
+    <div id="timebar" style="display:none">
+      <button id="play">▶ Play</button>
+      <input type="range" id="frame" min="0" max="0" value="0" step="1">
+      <span id="frametime"></span>
+    </div>
+  </div>
+  <aside>
+    <h2>What you are looking at</h2>
+    <p class="explain" id="about"></p>
+    <div id="trackinfo"></div>
+    <h2>Movers found</h2>
+    <div id="cands"></div>
+    <h2>Known asteroids predicted in this field</h2>
+    <div id="expected"></div>
+  </aside>
+</main>
+<script src="data/fields.js"></script>
+<script>
+const FIELDS = window.GHOSTSHIFT_FIELDS || [];
+const WEAK_SNR = 10;   // unidentified movers below this are shown faded and listed separately
+const $ = s => document.querySelector(s);
+const canvas = $('#c'), ctx = canvas.getContext('2d');
+const stage = $('#stage');
+let field, imgs = {}, layer = 'epoch1', showMarkers = true, blinking = null, selected = null;
+let view = { scale: 1, tx: 0, ty: 0 };   // image px -> screen: s = scale*p + t
+
+// ---------- WCS: TAN (gnomonic) projection, FITS row 0 = bottom. Our PNGs are flipped so row 0 = top. ----------
+const D2R = Math.PI / 180;
+function pixToSky(px, pyTop) {           // px, py in image pixels (PNG orientation)
+  const w = field.wcs, py = field.height - 1 - pyTop;
+  const x = w.cdelt[0] * (px - w.crpix[0]) * D2R, y = w.cdelt[1] * (py - w.crpix[1]) * D2R;
+  const ra0 = w.crval[0] * D2R, dec0 = w.crval[1] * D2R;
+  const r = Math.hypot(x, y), c = Math.atan(r);
+  const sinc = Math.sin(c), cosc = Math.cos(c);
+  const dec = r === 0 ? dec0 : Math.asin(cosc * Math.sin(dec0) + (y * sinc * Math.cos(dec0)) / r);
+  const ra = ra0 + Math.atan2(x * sinc, r * Math.cos(dec0) * cosc - y * Math.sin(dec0) * sinc);
+  return [((ra / D2R) % 360 + 360) % 360, dec / D2R];
+}
+function fmtRA(ra) { const h = ra / 15, hh = Math.floor(h), m = (h - hh) * 60, mm = Math.floor(m), s = (m - mm) * 60;
+  return `${String(hh).padStart(2,'0')}h ${String(mm).padStart(2,'0')}m ${s.toFixed(1).padStart(4,'0')}s`; }
+function fmtDec(d) { const sg = d < 0 ? '-' : '+', a = Math.abs(d), dd = Math.floor(a), m = (a - dd) * 60, mm = Math.floor(m), s = (m - mm) * 60;
+  return `${sg}${String(dd).padStart(2,'0')}° ${String(mm).padStart(2,'0')}' ${s.toFixed(0).padStart(2,'0')}"`; }
+
+// ---------- loading ----------
+let tf = 0, playing = null;              // motion-track frame index and play timer
+function loadField(i) {
+  field = FIELDS[i]; imgs = {}; selected = null; tf = 0; stopPlay();
+  const srcs = Object.assign({}, field.layers);
+  if (field.track) field.track.frames.forEach(fr => srcs['track_' + fr.index] = fr.image);
+  const names = Object.keys(srcs);
+  let n = 0;
+  names.forEach(k => { const im = new Image(); im.onload = () => { if (++n === names.length) { resetView(); draw(); } }; im.src = srcs[k]; imgs[k] = im; });
+  const hasLayers = Object.keys(field.layers).length > 0;
+  layer = hasLayers ? 'epoch1' : 'track';
+  $('#trackbtn').style.display = field.track ? '' : 'none';
+  $('#timebar').style.display = 'none';
+  if (field.track) { $('#frame').max = field.track.frames.length - 1; $('#frame').value = 0; }
+  $('#about').innerHTML =
+    `SPHEREx photographed this ${(field.width * field.pixel_arcsec / 3600).toFixed(1)}° patch of sky twice: ` +
+    `<b>${field.epoch1.time ? field.epoch1.time.slice(0, 10) : field.epoch1.week}</b> and <b>${field.epoch2.time ? field.epoch2.time.slice(0, 10) : field.epoch2.week}</b> ` +
+    `(near-infrared, 1.1–1.6 µm, detector D2). Stars stay put between the two visits. Anything that moved shows up only in one of them. ` +
+    `Press <kbd>Space</kbd> to flip between the visits, or view the <i>Difference</i>: white = no change, <span style="color:#f87171">red</span> = appeared in epoch 2, <span style="color:#60a5fa">blue</span> = vanished since epoch 1.`;
+  renderLists();
+}
+function resetView() {
+  const W = stage.clientWidth, H = stage.clientHeight;
+  if (!W || !H) { view.scale = 0; return; }       // layout not ready yet; resize() will call us again
+  view.scale = Math.min(W / field.width, H / field.height) * 0.98;
+  view.tx = (W - field.width * view.scale) / 2; view.ty = (H - field.height * view.scale) / 2;
+}
+// candidate y in diff.py is FITS row (0 = bottom) -> PNG row
+const toTop = y => field.height - 1 - y;
+
+// ---------- drawing ----------
+function resize() {
+  canvas.width = stage.clientWidth * devicePixelRatio; canvas.height = stage.clientHeight * devicePixelRatio;
+  // first layout after the images loaded, or the pane was resized before the user zoomed/panned
+  if (field && stage.clientWidth > 0 && (!(view.scale > 0) || !userTouched)) resetView();
+  draw();
+}
+let userTouched = false;
+function drawTrack() {
+  const tr = field.track, fr = tr.frames[tf], im = imgs['track_' + fr.index];
+  if (!im || !im.complete) return;
+  ctx.drawImage(im, view.tx, view.ty, field.width * view.scale, field.height * view.scale);
+  const S = (x, y) => [view.tx + (x + 0.5) * view.scale, view.ty + (toTop(y) + 0.5) * view.scale];
+  if (showMarkers) {
+    // predicted path of the tracked object (from the Minor Planet Center orbit), with day ticks
+    ctx.setLineDash([3, 4]); ctx.strokeStyle = '#facc15'; ctx.lineWidth = 1.2; ctx.beginPath();
+    tr.path.forEach((p, i) => { const [sx, sy] = S(p.x, p.y); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#facc15'; ctx.font = '11px system-ui';
+    tr.path.filter(p => p.time.endsWith('00:00')).forEach(p => { const [sx, sy] = S(p.x, p.y); ctx.fillRect(sx - 2, sy - 2, 4, 4); ctx.fillText(p.time.slice(5, 10), sx + 5, sy - 5); });
+    // where we detected it in earlier frames (trail) and in this frame
+    tr.observations.forEach(o => {
+      if (!o.detected) return;
+      const [sx, sy] = S(o.detected.x, o.detected.y);
+      if (o.frame < tf) { ctx.fillStyle = 'rgba(74,222,128,.7)'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 2 * Math.PI); ctx.fill(); }
+      if (o.frame === tf) { ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(sx, sy, 13, 0, 2 * Math.PI); ctx.stroke();
+        ctx.fillStyle = '#4ade80'; ctx.font = '12px system-ui'; ctx.fillText(tr.object.replace(/^\(\d+\)\s*/, '') + `  ${o.detected.snr.toFixed(0)}σ`, sx + 16, sy - 10); }
+    });
+    const o = tr.observations.find(o => o.frame === tf);
+    if (o && !o.detected) { const [sx, sy] = S(o.predicted.x, o.predicted.y); ctx.strokeStyle = '#facc15'; ctx.lineWidth = 1.5; ctx.strokeRect(sx - 10, sy - 10, 20, 20); }
+    // other known asteroids predicted in this frame
+    fr.predicted.filter(k => k.name !== tr.object).forEach(k => { const [sx, sy] = S(k.x, k.y); ctx.strokeStyle = k.detected ? '#4ade80' : 'rgba(250,204,21,.5)'; ctx.lineWidth = 1; ctx.strokeRect(sx - 7, sy - 7, 14, 14); });
+  }
+  $('#label').textContent = `Visit ${tf + 1} of ${tr.frames.length} · ${fr.time.slice(0, 16).replace('T', ' ')} UTC · ${fr.n_exposures} exposure${fr.n_exposures > 1 ? 's' : ''}`;
+  $('#frametime').textContent = fr.time.slice(5, 16).replace('T', ' ') + ' UTC';
+  $('#frame').value = tf;
+}
+function draw() {
+  if (!field) return;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.fillStyle = layer === 'diff' ? '#1e293b' : '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = view.scale < 1;   // crisp pixels when zoomed in
+  document.querySelectorAll('#layers [data-layer]').forEach(b => b.classList.toggle('active', b.dataset.layer === layer));
+  $('#timebar').style.display = layer === 'track' ? 'flex' : 'none';
+  stage.classList.toggle('track', layer === 'track');
+  if (layer === 'track') return drawTrack();
+  if (!imgs[layer] || !imgs[layer].complete) return;
+  ctx.drawImage(imgs[layer], view.tx, view.ty, field.width * view.scale, field.height * view.scale);
+  if (showMarkers) {
+    const S = p => [view.tx + (p[0] + 0.5) * view.scale, view.ty + (p[1] + 0.5) * view.scale];
+    ctx.lineWidth = 1.5; ctx.font = '12px system-ui';
+    field.expected.filter(e => !e.detected).forEach(e => {
+      const [sx, sy] = S([e.x, toTop(e.y)]); ctx.strokeStyle = '#facc15'; ctx.strokeRect(sx - 9, sy - 9, 18, 18);
+    });
+    field.candidates.forEach((c, i) => {
+      const [sx, sy] = S([c.x, toTop(c.y)]); const weak = !c.known && c.snr < WEAK_SNR;
+      const col = c.known ? '#4ade80' : weak ? 'rgba(248,113,113,.45)' : '#f87171';
+      ctx.strokeStyle = col; ctx.lineWidth = selected === i ? 3 : weak ? 1 : 1.5;
+      ctx.beginPath(); ctx.arc(sx, sy, weak ? 6 : 11, 0, 2 * Math.PI); ctx.stroke();
+      if (c.known) { ctx.fillStyle = col; ctx.fillText(c.known.name.replace(/^\(\d+\)\s*/, ''), sx + 14, sy - 10); }
+    });
+  }
+  const t = layer === 'epoch1' ? field.epoch1 : layer === 'epoch2' ? field.epoch2 : null;
+  $('#label').textContent = layer === 'diff' ? 'Difference: epoch 2 − epoch 1' :
+    `${layer === 'epoch1' ? 'Epoch 1' : 'Epoch 2'} · ${t.time ? t.time.slice(0, 16).replace('T', ' ') + ' UTC' : t.week}`;
+}
+
+// ---------- motion track controls ----------
+function setFrame(i) { const n = field.track.frames.length; tf = ((i % n) + n) % n; draw(); }
+function stopPlay() { if (playing) { clearInterval(playing); playing = null; } const b = $('#play'); if (b) b.textContent = '▶ Play'; }
+function togglePlay() {
+  if (playing) return stopPlay();
+  if (layer !== 'track') setLayer('track');
+  playing = setInterval(() => setFrame(tf + 1), 900); $('#play').textContent = '❚❚ Pause';
+}
+$('#play').onclick = togglePlay;
+$('#frame').oninput = e => { stopPlay(); setFrame(+e.target.value); };
+
+// ---------- interaction ----------
+function setLayer(l) { layer = l; draw(); }
+function stopBlink() { if (blinking) { clearInterval(blinking); blinking = null; $('#blink').classList.remove('active'); } }
+function toggleBlink() {
+  if (blinking) return stopBlink();
+  if (layer === 'diff') layer = 'epoch1';
+  blinking = setInterval(() => setLayer(layer === 'epoch1' ? 'epoch2' : 'epoch1'), 600);
+  $('#blink').classList.add('active');
+}
+document.querySelectorAll('#layers [data-layer]').forEach(b => b.onclick = () => { stopBlink(); if (b.dataset.layer !== 'track') stopPlay(); setLayer(b.dataset.layer); });
+$('#blink').onclick = toggleBlink;
+$('#markers').onclick = e => { showMarkers = !showMarkers; e.target.classList.toggle('active', showMarkers); draw(); };
+$('#reset').onclick = () => { userTouched = false; resetView(); draw(); };
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space' && layer === 'track') { e.preventDefault(); togglePlay(); }
+  else if (e.code === 'Space') { e.preventDefault(); stopBlink(); setLayer(layer === 'epoch1' ? 'epoch2' : 'epoch1'); }
+  else if (e.key === 'b' || e.key === 'B') toggleBlink();
+  else if (e.key === 'd' || e.key === 'D') { stopBlink(); setLayer('diff'); }
+  else if (e.key === '1') { stopBlink(); setLayer('epoch1'); } else if (e.key === '2') { stopBlink(); setLayer('epoch2'); }
+  else if ((e.key === 't' || e.key === 'T') && field.track) { stopBlink(); setLayer('track'); }
+  else if (layer === 'track' && e.key === 'ArrowRight') { stopPlay(); setFrame(tf + 1); }
+  else if (layer === 'track' && e.key === 'ArrowLeft') { stopPlay(); setFrame(tf - 1); }
+  else if (layer === 'track' && e.key === 'p') togglePlay();
+});
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  userTouched = true;
+  const f = Math.exp(-e.deltaY * 0.0015), r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const ns = Math.min(Math.max(view.scale * f, 0.2), 40);
+  view.tx = mx - (mx - view.tx) * (ns / view.scale); view.ty = my - (my - view.ty) * (ns / view.scale); view.scale = ns; draw();
+}, { passive: false });
+let drag = null;
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('#timebar')) return;   // let the Play button and slider receive their own clicks
+  drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }; stage.setPointerCapture(e.pointerId); stage.classList.add('dragging');
+});
+stage.addEventListener('pointermove', e => {
+  const r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.hypot(dx, dy) > 3) { drag.moved = true; userTouched = true; } view.tx = drag.tx + dx; view.ty = drag.ty + dy; draw(); }
+  if (field) {
+    const px = (mx - view.tx) / view.scale, py = (my - view.ty) / view.scale;
+    if (px >= 0 && py >= 0 && px < field.width && py < field.height) {
+      const [ra, dec] = pixToSky(px, py);
+      $('#readout').textContent = `RA ${fmtRA(ra)}   Dec ${fmtDec(dec)}   (${ra.toFixed(5)}°, ${dec.toFixed(5)}°)   pixel ${Math.floor(px)}, ${Math.floor(field.height - 1 - py)}`;
+    }
+  }
+});
+stage.addEventListener('pointerup', e => {
+  stage.classList.remove('dragging');
+  if (drag && !drag.moved) {   // click: pick the nearest marker within 14 screen px
+    const r = stage.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    let best = null, bd = 14;
+    field.candidates.forEach((c, i) => { const d = Math.hypot(view.tx + (c.x + .5) * view.scale - mx, view.ty + (toTop(c.y) + .5) * view.scale - my); if (d < bd) { bd = d; best = i; } });
+    select(best);
+  }
+  drag = null;
+});
+function select(i, zoom) {
+  selected = i; renderLists();
+  if (i !== null && zoom) { const c = field.candidates[i]; view.scale = Math.max(view.scale, 8);
+    view.tx = stage.clientWidth / 2 - (c.x + .5) * view.scale; view.ty = stage.clientHeight / 2 - (toTop(c.y) + .5) * view.scale; }
+  draw();
+  const el = document.querySelector(`.card[data-i="${i}"]`); if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+// ---------- side panel ----------
+function mpcLink(name) { const m = name.match(/^\((\d+)\)/); return m ? `https://minorplanetcenter.net/db_search/show_object?object_id=${m[1]}` : null; }
+function jplLink(name) { const m = name.match(/^\((\d+)\)/); return m ? `https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html#/?sstr=${m[1]}` : null; }
+function renderTrack() {
+  const tr = field.track, box = $('#trackinfo');
+  if (!tr) { box.innerHTML = ''; return; }
+  const det = tr.observations.filter(o => o.detected).length;
+  const rate = tr.measured_motion;
+  box.innerHTML = `<h2>Motion track</h2>
+    <div class="card" style="cursor:default"><b>${tr.object}</b>
+      <p class="explain">SPHEREx visited this patch ${tr.frames.length} times in ${(tr.frames[tr.frames.length - 1].mjd - tr.frames[0].mjd).toFixed(1)} days.
+      Each frame is compared against a static-sky template built from the ${tr.template_week} sweep, so only things that moved remain.
+      The dotted yellow line is where the Minor Planet Center's orbit says the asteroid should be; green is where we actually found it.</p>
+      <div class="kv">
+        <div>found in</div><div>${det} of ${tr.frames.length} visits</div>
+        ${rate ? `<div>measured motion</div><div>${rate.arcmin}′ in ${rate.days} days = ${rate.deg_per_day}°/day</div>` : ''}
+      </div>
+      <div class="kv" style="margin-top:8px">${tr.observations.map(o =>
+        `<div>${o.time.slice(5, 16).replace('T', ' ')}</div><div>${o.detected ? `<span class="tag known">detected</span> ${o.detected.snr.toFixed(0)} σ` : '<span class="tag missed">predicted, not detected</span>'}</div>`).join('')}
+      </div>
+      <p class="explain" style="margin-top:8px">Press <kbd>T</kbd> then <kbd>▶ Play</kbd>, or step with <kbd>←</kbd> <kbd>→</kbd>.</p>
+    </div>`;
+}
+function renderLists() {
+  renderTrack();
+  const cands = field.candidates;
+  const card = (c, i) => {
+    const [ra, dec] = [c.ra, c.dec];
+    const k = c.known;
+    return `<div class="card ${selected === i ? 'sel' : ''}" data-i="${i}">
+      <span class="tag ${k ? 'known' : 'unknown'}">${k ? 'known object' : 'unidentified'}</span>
+      <b style="margin-left:6px">${k ? k.name : 'Candidate ' + (i + 1)}</b>
+      <div class="kv">
+        <div>what</div><div>${c.kind === 'appeared' ? 'present only in epoch 2' : 'present only in epoch 1'} (${c.date})</div>
+        <div>where</div><div>${fmtRA(ra)} ${fmtDec(dec)}</div>
+        <div>strength</div><div>${c.snr} σ, ${c.npix} px</div>
+        ${k ? `<div>match</div><div>V=${k.V}, ${k.sep_arcsec}" from predicted position</div>
+               <div>look up</div><div><a target="_blank" href="${mpcLink(k.name)}">MPC</a> · <a target="_blank" href="${jplLink(k.name)}">JPL</a></div>` :
+               `<div>status</div><div>no catalogued asteroid within 30" at this time — needs a second look</div>`}
+      </div></div>`; };
+  const strong = cands.map((c, i) => [c, i]).filter(([c]) => c.known || c.snr >= WEAK_SNR);
+  const weak = cands.map((c, i) => [c, i]).filter(([c]) => !c.known && c.snr < WEAK_SNR);
+  $('#cands').innerHTML = (strong.length ? strong.map(([c, i]) => card(c, i)).join('') : '<p class="explain">No strong movers passed the filters in this field.</p>') +
+    (weak.length ? `<details><summary class="hint" style="cursor:pointer;margin:6px 0">${weak.length} weak candidates (under ${WEAK_SNR} σ, probably noise)</summary>${weak.map(([c, i]) => card(c, i)).join('')}</details>` : '');
+  document.querySelectorAll('#cands .card').forEach(el => el.onclick = () => select(+el.dataset.i, true));
+  const exp = field.expected;
+  $('#expected').innerHTML = exp.length ? exp.sort((a, b) => a.V - b.V).map(e =>
+    `<div class="card" style="cursor:default"><span class="tag ${e.detected ? 'known' : 'missed'}">${e.detected ? 'detected' : 'not detected'}</span>
+     <b style="margin-left:6px">${e.name}</b> <span class="hint">V=${e.V} · ${e.epoch === 'epoch1' ? 'epoch 1' : 'epoch 2'}</span></div>`).join('')
+    : '<p class="explain">No known asteroid brighter than magnitude 20 was predicted inside this field at either exposure time.</p>';
+}
+
+// ---------- boot ----------
+const sel = $('#field');
+FIELDS.forEach((f, i) => { const o = document.createElement('option'); o.value = i; o.textContent = f.name; sel.appendChild(o); });
+sel.onchange = () => { stopBlink(); loadField(+sel.value); };
+new ResizeObserver(resize).observe(stage);
+if (FIELDS.length) loadField(0); else $('#about').textContent = 'No fields exported yet. Run: python export_web.py';
+</script>
+</body>
+</html>

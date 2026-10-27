@@ -1,0 +1,148 @@
+{
+  "epoch1": {
+    "week": "2025W30",
+    "time": "2025-07-24 15:03:40.038",
+    "files": [
+      "2025W30_level2_2025W30_2B_0028_1D2_spx_l2b-v20-2025-262.fits",
+      "2025W30_level2_2025W30_2B_0028_2D2_spx_l2b-v20-2025-262.fits",
+      "2025W30_level2_2025W30_2B_0028_3D2_spx_l2b-v20-2025-262.fits",
+      "2025W30_level2_2025W30_2B_0028_4D2_spx_l2b-v20-2025-262.fits"
+    ]
+  },
+  "epoch2": {
+    "week": "2026W30",
+    "time": "2026-07-20 02:42:51.983",
+    "files": [
+      "2026W30_level2_2026W30_1B_0022_1D2_spx_l2b-v27-2026-222.fits",
+      "2026W30_level2_2026W30_1B_0022_2D2_spx_l2b-v27-2026-222.fits",
+      "2026W30_level2_2026W30_1B_0022_3D2_spx_l2b-v27-2026-222.fits",
+      "2026W30_level2_2026W30_1B_0022_4D2_spx_l2b-v27-2026-222.fits"
+    ]
+  },
+  "candidates": [
+    {
+      "kind": "appeared",
+      "epoch": "epoch2",
+      "date": "2026-07-20 02:42",
+      "ra": 27.51934,
+      "dec": 11.54212,
+      "x": 512.3,
+      "y": 330.4,
+      "snr": 15.6,
+      "npix": 3,
+      "other_epoch_sigma": 1.8,
+      "in_all_sigma": 5.2,
+      "known": null
+    },
+    {
+      "kind": "appeared",
+      "epoch": "epoch2",
+      "date": "2026-07-20 02:42",
+      "ra": 27.88416,
+      "dec": 11.90455,
+      "x": 304.7,
+      "y": 540.7,
+      "snr": 11.4,
+      "npix": 5,
+      "other_epoch_sigma": 3.7,
+      "in_all_sigma": 8.8,
+      "known": null
+    },
+    {
+      "kind": "appeared",
+      "epoch": "epoch2",
+      "date": "2026-07-20 02:42",
+      "ra": 27.49931,
+      "dec": 11.77996,
+      "x": 523.5,
+      "y": 468.5,
+      "snr": 9.9,
+      "npix": 4,
+      "other_epoch_sigma": 0.9,
+      "in_all_sigma": 3.1,
+      "known": null
+    }
+  ],
+  "expected_known": [
+    {
+      "epoch": "epoch1",
+      "name": "(71623) 2000 ET53",
+      "V": 19.6,
+      "ra": 28.078749999999996,
+      "dec": 11.604166666666666,
+      "x": 194.1,
+      "y": 366.3,
+      "detected": false
+    },
+    {
+      "epoch": "epoch1",
+      "name": "(113524) 2002 TV17",
+      "V": 19.9,
+      "ra": 27.884999999999998,
+      "dec": 11.183055555555555,
+      "x": 304.3,
+      "y": 121.7,
+      "detected": false
+    },
+    {
+      "epoch": "epoch1",
+      "name": "(25819) Tripathi",
+      "V": 19.3,
+      "ra": 27.65875,
+      "dec": 11.3025,
+      "x": 433.1,
+      "y": 191.1,
+      "detected": false
+    },
+    {
+      "epoch": "epoch1",
+      "name": "(189115) 2001 UE167",
+      "V": 19.0,
+      "ra": 27.758333333333333,
+      "dec": 11.067222222222222,
+      "x": 376.5,
+      "y": 54.5,
+      "detected": false
+    },
+    {
+      "epoch": "epoch1",
+      "name": "(85178) 1990 TQ",
+      "V": 19.0,
+      "ra": 28.03833333333333,
+      "dec": 10.990833333333333,
+      "x": 216.9,
+      "y": 10.1,
+      "detected": false
+    },
+    {
+      "epoch": "epoch2",
+      "name": "(14575) Jamesblanc",
+      "V": 19.0,
+      "ra": 27.99625,
+      "dec": 11.632222222222223,
+      "x": 241.0,
+      "y": 382.5,
+      "detected": false
+    },
+    {
+      "epoch": "epoch2",
+      "name": "(30427) 2000 LX8",
+      "V": 19.3,
+      "ra": 28.121666666666666,
+      "dec": 11.219166666666666,
+      "x": 169.5,
+      "y": 142.7,
+      "detected": false
+    },
+    {
+      "epoch": "epoch2",
+      "name": "(2060) Chiron",
+      "V": 18.5,
+      "ra": 28.2,
+      "dec": 11.847222222222223,
+      "x": 125.3,
+      "y": 507.5,
+      "detected": false
+    }
+  ]
+}
